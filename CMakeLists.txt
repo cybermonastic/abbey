@@ -21,6 +21,7 @@ endif()
 # ---------------------------------------------------------------------------
 add_library(abbey STATIC
   src/abbey/abbey.cc
+  src/abbey/print.cc
 )
 target_include_directories(abbey PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -29,6 +30,7 @@ target_include_directories(abbey PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # ---------------------------------------------------------------------------
 add_executable(abbey_test
   test/main.cc
+  test/print.cc
 )
 target_link_libraries(abbey_test PRIVATE abbey)
 
@@ -38,4 +40,12 @@ enable_testing()
 # command, supplying different arguments. If the command returns 0, it
 # is considered passed.
 # ---------------------------------------------------------------------------
-add_test(NAME abbey_test COMMAND abbey_test)
+add_test(NAME print_system0 COMMAND abbey_test print system0)
+add_test(NAME print_system2 COMMAND abbey_test print system2)
+add_test(NAME print_system_int COMMAND abbey_test print system_int)
+add_test(NAME print_system_real COMMAND abbey_test print system_real)
+add_test(NAME print_system_decimal COMMAND abbey_test print system_decimal)
+add_test(NAME print_system_scientific COMMAND abbey_test print system_scientific)
+add_test(NAME print_system_string COMMAND abbey_test print system_string)
+add_test(NAME print_system_message COMMAND abbey_test print system_message)
+add_test(NAME print_debug COMMAND abbey_test print debug)

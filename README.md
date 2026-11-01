@@ -9,6 +9,8 @@ Run from a **Developer PowerShell for VS** (so `cl` is on the PATH):
 cmake --preset debug          # configure (once, or after editing CMakeLists.txt)
 cmake --build --preset debug  # build into build/debug/
 ctest --preset debug          # run the tests
+ctest --preset debug -V       # see test output
+ctest --preset debug --output-on-failure # only see failure output
 ```
 
 Use `release` instead of `debug` for an optimized build.
