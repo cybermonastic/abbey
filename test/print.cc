@@ -113,7 +113,7 @@ int RunPrintDebug(int argc, const char *argv[]) {
         LocalizableMessage("test.message_id")
             .WithInt(10))
         .Debug("----", "", buf);
-    EXPECT(buf.str(), "----\"test.message_id.1\" {10}");
+    EXPECT(buf.str(), "\"test.message_id.1\" {10}");
     return 0;
 }
 

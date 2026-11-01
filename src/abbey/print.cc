@@ -126,7 +126,7 @@ std::string GetMessageKey(std::string_view message_id, size_t arg_count) {
 }  // namespace
 
 const Locale& Locale::SYSTEM() {
-    static Locale system{std::string("C")};
+    static Locale system("C");
     return system;
 }
   

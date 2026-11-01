@@ -7,9 +7,20 @@
 
 #include "abbey/debug.h"
 
+/* Sample usage:
+// LoadUserMessages("en_us.strings", false);
+// static const auto EN_US = Locale("en_US.UTF-8");
+//
+// std::stringstream buf;
+// LocalizableMessage("test.message_id")
+//     .WithInt(10)
+//     .WithReal(10.46, 2, true)
+//     .Localize(EN_US, buf);
+*/
+
 namespace abbey {
 
-// Adds user messages loaded from file.
+/* Adds user messages loaded from file.
 // The first line of the file should be of the form:
 // lang_COUNTRY.codepage
 // e.g. en_US.UTF-8
@@ -22,6 +33,7 @@ namespace abbey {
 // from 0 to N-1 should be present.
 //
 // NOT THREADSAFE 
+*/
 void LoadUserMessages(std::string_view filename, bool ignore_failures);
 
 struct Locale {
@@ -100,8 +112,7 @@ private:
 public:
     Localizable_Debugable(const Localizable& self): self(self) {}
 
-    std::ostream& Debug(std::string_view indent, std::string_view, std::ostream& out) const override {
-        out << indent;
+    std::ostream& Debug(std::string_view, std::string_view, std::ostream& out) const override {
         return self.Localize(Locale::SYSTEM(), out);
     }
 };

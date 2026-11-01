@@ -22,6 +22,7 @@ endif()
 add_library(abbey STATIC
   src/abbey/abbey.cc
   src/abbey/print.cc
+  src/abbey/error.cc
 )
 target_include_directories(abbey PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -31,6 +32,7 @@ target_include_directories(abbey PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_executable(abbey_test
   test/main.cc
   test/print.cc
+  test/error.cc
 )
 target_link_libraries(abbey_test PRIVATE abbey)
 
@@ -49,3 +51,7 @@ add_test(NAME print_system_scientific COMMAND abbey_test print system_scientific
 add_test(NAME print_system_string COMMAND abbey_test print system_string)
 add_test(NAME print_system_message COMMAND abbey_test print system_message)
 add_test(NAME print_debug COMMAND abbey_test print debug)
+add_test(NAME error_system COMMAND abbey_test error system)
+add_test(NAME error_system_with_cause COMMAND abbey_test error system_with_cause)
+add_test(NAME error_user COMMAND abbey_test error user)
+add_test(NAME error_user_with_cause COMMAND abbey_test error user_with_cause)
