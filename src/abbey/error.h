@@ -64,7 +64,7 @@ private:
 public:
     UserError_OwnedDebugable(const UserError& self) : self(self.Clone()) {}
 
-    std::ostream& Debug(std::string_view indent, std::string_view prefix, std::ostream& out) const override;
+    std::ostream& Debug(std::string_view prefix, std::string_view indent, std::ostream& out) const override;
     std::unique_ptr<OwnedDebugable> Clone() const override {
         return std::make_unique<UserError_OwnedDebugable>(*self);
     }
@@ -79,7 +79,7 @@ private:
 public:
     UserError_Debugable(const UserError& self) : self(self) {}
 
-    std::ostream& Debug(std::string_view indent, std::string_view prefix, std::ostream& out) const override;
+    std::ostream& Debug(std::string_view prefix, std::string_view indent, std::ostream& out) const override;
 };
 inline UserError_Debugable MakeDebugable(const UserError& e) {
     return UserError_Debugable(e);
@@ -119,7 +119,7 @@ private:
 public:
     SystemError_OwnedDebugable(const SystemError& self) : self(self.Clone()) {}
 
-    std::ostream& Debug(std::string_view indent, std::string_view prefix, std::ostream& out) const override;
+    std::ostream& Debug(std::string_view prefix, std::string_view indent, std::ostream& out) const override;
     std::unique_ptr<OwnedDebugable> Clone() const override {
         return std::make_unique<SystemError_OwnedDebugable>(*self);
     }
@@ -134,7 +134,7 @@ private:
 public:
     SystemError_Debugable(const SystemError& self) : self(self) {}
 
-    std::ostream& Debug(std::string_view indent, std::string_view prefix, std::ostream& out) const override;
+    std::ostream& Debug(std::string_view prefix, std::string_view indent, std::ostream& out) const override;
 };
 inline SystemError_Debugable MakeDebugable(const SystemError& e) {
     return SystemError_Debugable(e);

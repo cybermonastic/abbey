@@ -9,7 +9,9 @@ class Debugable {
 public:
     virtual ~Debugable() = default;
 
-    virtual std::ostream& Debug(std::string_view indent, std::string_view prefix, std::ostream& out) const = 0;
+    // All lines after the first must write 'prefix' before anything else.
+    // If additional nesting is desired, prepend 'indent' to 'prefix'.
+    virtual std::ostream& Debug(std::string_view prefix, std::string_view indent, std::ostream& out) const = 0;
 };
 
 class OwnedDebugable : public Debugable {

@@ -11,16 +11,16 @@ std::unique_ptr<UserError> UserError::Clone() const {
     return std::make_unique<UserError>(*this);
 }
 
-std::ostream& UserError_OwnedDebugable::Debug(std::string_view indent, std::string_view prefix, std::ostream& out) const {
-    return MakeDebugable(*self).Debug(indent, prefix, out);
+std::ostream& UserError_OwnedDebugable::Debug(std::string_view prefix, std::string_view indent, std::ostream& out) const {
+    return MakeDebugable(*self).Debug(prefix, indent, out);
 } 
 
-std::ostream& UserError_Debugable::Debug(std::string_view indent, std::string_view prefix, std::ostream& out) const {
+std::ostream& UserError_Debugable::Debug(std::string_view prefix, std::string_view indent, std::ostream& out) const {
     out << "UserError: ";
-    MakeDebugable(*self.message).Debug(indent, prefix, out);
+    MakeDebugable(*self.message).Debug(prefix, indent, out);
     if (self.cause) {
-        out << " caused by\n" << indent;
-        return self.cause->Debug(indent, prefix, out);
+        out << " caused by\n" << prefix;
+        return self.cause->Debug(prefix, indent, out);
     }
     return out;
 } 
@@ -38,15 +38,15 @@ std::unique_ptr<SystemError> SystemError::Clone() const {
     return std::make_unique<SystemError>(*this);
 }
 
-std::ostream& SystemError_OwnedDebugable::Debug(std::string_view indent, std::string_view prefix, std::ostream& out) const {
-    return MakeDebugable(*self).Debug(indent, prefix, out);
+std::ostream& SystemError_OwnedDebugable::Debug(std::string_view prefix, std::string_view indent, std::ostream& out) const {
+    return MakeDebugable(*self).Debug(prefix, indent, out);
 } 
 
-std::ostream& SystemError_Debugable::Debug(std::string_view indent, std::string_view prefix, std::ostream& out) const {
+std::ostream& SystemError_Debugable::Debug(std::string_view prefix, std::string_view indent, std::ostream& out) const {
     out << "SystemError: \"" << self.message << "\"";
     if (self.cause) {
-        out << " caused by\n" << indent;
-        return self.cause->Debug(indent, prefix, out);
+        out << " caused by\n" << prefix;
+        return self.cause->Debug(prefix, indent, out);
     }
     return out;
 }
