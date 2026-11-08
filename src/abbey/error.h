@@ -8,8 +8,8 @@
 #include "abbey/debug.h"
 #include "abbey/print.h"
 
-#define LINE_AS_STRING(n) #n
-#define SYSTEM_ERROR_MESSAGE(file, line, msg) std::string(file ":" LINE_AS_STRING(line) ": ") + msg
+#define ERROR_LINE_AS_STRING(n) #n
+#define SYSTEM_ERROR_MESSAGE(file, line, msg) std::string(file ":" ERROR_LINE_AS_STRING(line) ": ") + msg
 #define CREATE_SYSTEM_ERROR(msg) abbey::SystemError( SYSTEM_ERROR_MESSAGE(__FILE__, __LINE__, msg) )
 #define CREATE_SYSTEM_ERROR_BECAUSE(msg, cause) \
         abbey::SystemError( SYSTEM_ERROR_MESSAGE(__FILE__, __LINE__, msg), abbey::MakeOwnedDebugable(cause) );

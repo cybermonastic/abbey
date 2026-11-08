@@ -63,3 +63,12 @@ add_test(NAME error_user_with_cause COMMAND abbey_test error user_with_cause)
 # tokens
 add_test(NAME tokens_text_writer COMMAND abbey_test tokens text_writer)
 add_test(NAME tokens_empty_collection COMMAND abbey_test tokens empty_collection)
+add_test(NAME tokens_bad_seq COMMAND abbey_test tokens bad_seq)
+add_test(NAME tokens_bad_struct COMMAND abbey_test tokens bad_struct)
+
+add_test(NAME tokens_read COMMAND abbey_test tokens read)
+add_test(NAME tokens_read_string COMMAND abbey_test tokens read_string)
+add_test(NAME tokens_read_empty COMMAND abbey_test tokens read_empty)
+add_test(NAME tokens_read_missing_symbol COMMAND abbey_test tokens read_missing_symbol)
+add_test(NAME tokens_read_double COMMAND abbey_test tokens read_double)
+add_test(NAME tokens_read_wrong_type COMMAND abbey_test tokens read_wrong_type)

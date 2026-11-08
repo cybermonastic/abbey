@@ -2,6 +2,7 @@
 
 #include <iomanip>
 #include <sstream>
+#include <cctype>
 
 #include "abbey/error.h"
 
@@ -28,14 +29,14 @@ void SymbolNamespace::CommitRegistrations() {
 size_t SymbolNamespace::IdForString(std::string_view token) const {
     auto found = str_to_id.find(std::string(token));
     if (found == str_to_id.end()) {
-        THROW_SYSTEM_ERROR(std::string("Token \"") + std::string(token) + "\" not registered.");
+        THROW_SYSTEM_ERROR(std::string("Symbol \"") + std::string(token) + "\" not registered.");
     }
     return found->second;
 }
 
 std::string_view SymbolNamespace::StringForId(size_t id) const {
     if (id >= id_to_str.size()) {
-        THROW_SYSTEM_ERROR(std::string("Token Id (") + std::to_string(id) + ") is not valid.");
+        THROW_SYSTEM_ERROR(std::string("Symbol Id (") + std::to_string(id) + ") is not valid.");
     }
     return id_to_str[id];
 }
@@ -77,7 +78,6 @@ std::ostream& TokenType_Debugable::Debug(std::string_view, std::string_view, std
         case TokenType::END_STRUCT: return out << "END_STRUCT";
         case TokenType::BEGIN_SEQ: return out << "BEGIN_SEQ";
         case TokenType::END_SEQ: return out << "END_SEQ";
-        case TokenType::SEP_SEQ: return out << "SEP_SEQ";
     }
     return out;
 }
@@ -87,8 +87,8 @@ std::ostream& Token_Debugable::Debug(std::string_view, std::string_view, std::os
     switch(token.type) {
         case TokenType::KEY: 
         case TokenType::ENUM: {
-            auto namespace_token = std::get<std::pair<size_t, size_t>>(token.token);
-            return out << "(" << token_map.StringForId(namespace_token.first, namespace_token.second) << ")";
+            auto namespace_symbol = std::get<std::pair<size_t, size_t>>(token.token);
+            return out << "(" << token_map.StringForId(namespace_symbol.first, namespace_symbol.second) << ")";
         }
         case TokenType::INTEGER: 
             return out << "(" << token.GetInteger() << ")";
@@ -98,9 +98,14 @@ std::ostream& Token_Debugable::Debug(std::string_view, std::string_view, std::os
             return out << "(" << token.GetString() << ")";
         case TokenType::BEGIN_STRUCT: return out;
         case TokenType::END_STRUCT: return out;
-        case TokenType::BEGIN_SEQ: return out;
+        case TokenType::BEGIN_SEQ: {
+            std::optional<size_t> count = token.GetCount();
+            if (count.has_value()) {
+                out << "(" << *count << ")";
+            }
+            return out;
+        }
         case TokenType::END_SEQ: return out;
-        case TokenType::SEP_SEQ: return out;
     }
     return out;
 }
@@ -118,10 +123,40 @@ bool id_in_set(size_t id, const std::vector<size_t>& valid_set) {
 
 } // namespace
 
+Token TokenReader::NextToken(size_t namespace_id, TokenType a) {
+    Token result = ReadToken(namespace_id);
+    if (result.type == TokenType::INTEGER && a == TokenType::REAL) {
+        // allow integer to implicitly cast to real.
+        result.type = TokenType::REAL;
+        result.token = static_cast<double>(std::get<long>(result.token));
+    }
+    if (result.type != a) {
+        std::stringstream message;
+        message << "Expected token type " << MakeDebugable(a) << ", found " << MakeDebugable(result.type);
+        RaiseAtLocation(message.str());
+    }
+    return result;
+}
+
+Token TokenReader::NextToken(size_t namespace_id, TokenType a, TokenType b) {
+    Token result = ReadToken(namespace_id);
+    if (result.type == TokenType::INTEGER && (a == TokenType::REAL && b != TokenType::INTEGER || b == TokenType::REAL && a != TokenType::INTEGER)) {
+        // allow integer to implicitly cast to real.
+        result.type = TokenType::REAL;
+        result.token = static_cast<double>(std::get<long>(result.token));
+    }
+    if (result.type != a && result.type != b) {
+        std::stringstream message;
+        message << "Expected token type " << MakeDebugable(a) << " or " << MakeDebugable(b) << ", found " << MakeDebugable(result.type);
+        RaiseAtLocation(message.str());
+    }
+    return result;
+}
+
 Token TokenReader::NextKey(size_t namespace_id, const std::vector<size_t>& valid_key_ids) {
     Token t = NextToken(namespace_id, TokenType::KEY);
     if (!id_in_set(t.GetKey(), valid_key_ids)) {
-        RaiseUnexpectedToken(namespace_id, valid_key_ids, t.GetKey());
+        RaiseUnexpectedSymbol(namespace_id, valid_key_ids, t.GetKey());
     }
     return t;
 }
@@ -132,7 +167,7 @@ Token TokenReader::NextKey(size_t namespace_id, const std::vector<size_t>& valid
         return t;
     }
     if (!id_in_set(t.GetKey(), valid_key_ids)) {
-        RaiseUnexpectedToken(namespace_id, valid_key_ids, t.GetKey());
+        RaiseUnexpectedSymbol(namespace_id, valid_key_ids, t.GetKey());
     }
     return t;
 }
@@ -140,7 +175,7 @@ Token TokenReader::NextKey(size_t namespace_id, const std::vector<size_t>& valid
 Token TokenReader::NextEnum(size_t namespace_id, const std::vector<size_t>& valid_enum_ids) {
     Token t = NextToken(namespace_id, TokenType::ENUM);
     if (!id_in_set(t.GetEnum(), valid_enum_ids)) {
-        RaiseUnexpectedToken(namespace_id, valid_enum_ids, t.GetEnum());
+        RaiseUnexpectedSymbol(namespace_id, valid_enum_ids, t.GetEnum());
     }
     return t;
 }
@@ -151,7 +186,7 @@ Token TokenReader::NextEnum(size_t namespace_id, const std::vector<size_t>& vali
         return t;
     } 
     if (!id_in_set(t.GetEnum(), valid_enum_ids)) {
-        RaiseUnexpectedToken(namespace_id, valid_enum_ids, t.GetEnum());
+        RaiseUnexpectedSymbol(namespace_id, valid_enum_ids, t.GetEnum());
     }
     return t; 
 }
@@ -159,7 +194,9 @@ Token TokenReader::NextEnum(size_t namespace_id, const std::vector<size_t>& vali
 TextTokenWriter::TextTokenWriter(const SymbolMap& tokens, std::ostream& out)
 : tokens(tokens)
 , out(out)
-{}
+{
+    out.imbue(std::locale("en_US.UTF-8"));
+}
 
 void TextTokenWriter::Complete() {
     out.flush();
@@ -186,9 +223,20 @@ void require_scope(const std::vector<TokenType>& scope, TokenType required, Toke
         THROW_SYSTEM_ERROR(error_message.str());
     }
 }
+
+bool needs_comma(const std::vector<TokenType>& scope, bool pending_begin_seq) {
+    if (scope.empty() || scope.back() != TokenType::BEGIN_SEQ) return false;
+    return !pending_begin_seq;
+}
+
+void write_comma(const std::vector<TokenType>& scope, std::ostream& out) {
+    out << ",";
+    scope_prefix(scope, out);
+}
 }
 
 void TextTokenWriter::Write(const Token& token) {
+    bool enable_comma = needs_comma(scope, pending_begin_seq);
     if (pending_begin_seq) {
         pending_begin_seq = false;
         if (token.type == TokenType::END_SEQ) {
@@ -207,22 +255,34 @@ void TextTokenWriter::Write(const Token& token) {
             if (!first_token) {
                 scope_prefix(scope, out);
             }
-            auto namespace_token = std::get<std::pair<size_t, size_t>>(token.token);
-            out << tokens.StringForId(namespace_token.first, namespace_token.second);
+            auto namespace_symbol = std::get<std::pair<size_t, size_t>>(token.token);
+            out << tokens.StringForId(namespace_symbol.first, namespace_symbol.second);
             out << ":";
         } break; 
         case TokenType::ENUM: {
-            auto namespace_token = std::get<std::pair<size_t, size_t>>(token.token);
-            out << tokens.StringForId(namespace_token.first, namespace_token.second);
+            if (enable_comma) {
+                write_comma(scope, out);
+            }
+            auto namespace_symbol = std::get<std::pair<size_t, size_t>>(token.token);
+            out << tokens.StringForId(namespace_symbol.first, namespace_symbol.second);
         } break;
         case TokenType::INTEGER: {
+            if (enable_comma) {
+                write_comma(scope, out);
+            }
             out << token.GetInteger();
         } break;
         case TokenType::REAL: {
+            if (enable_comma) {
+                write_comma(scope, out);
+            }
             // This will be lossy, we're just going to eat that risk.
             out << std::scientific << std::setprecision(12) << token.GetReal();
         } break;
         case TokenType::STRING: {
+            if (enable_comma) {
+                write_comma(scope, out);
+            }
             std::string_view cs = token.GetString();
             out.put('"');
             for (char c : cs) {
@@ -235,8 +295,11 @@ void TextTokenWriter::Write(const Token& token) {
             out.put('"');
         } break;
         case TokenType::BEGIN_STRUCT: {
+            if (enable_comma) {
+                write_comma(scope, out);
+            }
+            out << "{";
             scope.emplace_back(TokenType::BEGIN_STRUCT);
-            out.put('{');
         } break;
         case TokenType::END_STRUCT: {
             require_scope(scope, TokenType::BEGIN_STRUCT, token.type);
@@ -245,6 +308,9 @@ void TextTokenWriter::Write(const Token& token) {
             out << '}';
         } break;
         case TokenType::BEGIN_SEQ: {
+            if (enable_comma) {
+                write_comma(scope, out);
+            }
             pending_begin_seq = true;
         } break;
         case TokenType::END_SEQ: {
@@ -253,15 +319,193 @@ void TextTokenWriter::Write(const Token& token) {
             scope_prefix(scope, out);
             out << ']';
         } break;
-        case TokenType::SEP_SEQ: {
-            require_scope(scope, TokenType::BEGIN_SEQ, token.type);
-            out << ',';
-            scope_prefix(scope, out);
-        } break;
     }
     first_token = false; 
 }
 
-// Test TextTokenWriter::Write before doing anything further.
+TextTokenReader::TextTokenReader(const SymbolMap& symbol_map, std::istream& in) 
+: symbol_map(symbol_map)
+, in(in)
+, has_more(in.good())
+{
+    in.imbue(std::locale("en_US.UTF-8"));
+    ConsumeWhitespace(true);
+}
+
+void TextTokenReader::NextChar() {
+    in.get(next);
+    if (next == '\n') {
+        next_col = 0;
+        ++next_line;
+    } else {
+        ++next_col;
+    }
+    has_more = in.good();
+}
+
+void TextTokenReader::ConsumeWhitespace(bool advance_one) {
+    if (has_more && advance_one) {
+        NextChar();
+    }
+    while (has_more && std::isspace(next)) {
+        NextChar();
+    }
+}
+
+void TextTokenReader::RaiseAtLocation(std::string_view message) {
+    std::stringstream location;
+    location << " At line: " << line << " col: " << col << ".";
+    THROW_SYSTEM_ERROR(std::string(message) + location.str());
+}
+
+void TextTokenReader::RaiseUnexpectedSymbol(size_t namespace_id, const std::vector<size_t>& expected_symbols, size_t actual_symbol) {
+    std::stringstream message;
+
+    message << ": found symbol '" << symbol_map.StringForId(namespace_id, actual_symbol) << "', expected one of (";
+
+    size_t count = 0;
+    for (size_t expected : expected_symbols) {
+        message << "'" << symbol_map.StringForId(namespace_id, expected) << "'";
+        ++count;
+        if (count != expected_symbols.size()) {
+            message << ", ";
+        }
+    }
+    message << ")";
+    RaiseAtLocation(message.str());
+}
+
+namespace {
+bool IsSpecial(char c) {
+    return c == ':' || c == '{' || c == '}' || c == '[' || c == ']' || c == ',' || c == '"';
+}
+}
+
+size_t TextTokenReader::ReadSymbol(size_t namespace_id) {
+    std::string buffer;
+    buffer.reserve(30);
+    while (!IsSpecial(next) && !std::isspace(next)) {
+        buffer.push_back(next);
+        if (!has_more) break;
+        NextChar();
+    }
+    try {  
+        return symbol_map.IdForString(namespace_id, buffer); 
+    } catch (const SystemError&) {
+        std::stringstream msg;
+        msg << "Failed to read symbol: \"" << buffer << "\" is not a registered symbol";
+        RaiseAtLocation(msg.str());
+        return 0;
+    }
+}
+
+Token TextTokenReader::ReadToken(size_t namespace_id) {
+    if (!has_more) {
+        RaiseAtLocation("Unexpected end of stream");
+    }
+    col = next_col;
+    line = next_line;
+
+    if (expect_value) {
+        expect_value = false;
+        if (std::isdigit(next) || next == '-' || next == '+') {
+            std::string buffer;
+            bool is_real = false;
+            buffer.reserve(30);
+            while (std::isdigit(next) || next == '-' || next == '+' || next == 'e' || next == 'E' || next == '.') {
+                if (next == '.' || next == 'e' || next == 'E') {
+                    is_real = true;
+                }
+                buffer.push_back(next);
+                if (!has_more) break;
+                NextChar();
+            }
+            ConsumeWhitespace(false);
+            try {
+                if (is_real) {
+                    size_t end;
+                    double value = std::stod(buffer, &end);
+                    if (end != buffer.size()) {
+                        std::stringstream message;
+                        message << "Failed to parse real number '" << buffer << "'";
+                        THROW_SYSTEM_ERROR(message.str());
+                    }
+                    return Token::Real(value);
+                }
+                size_t end;
+                long value = std::stol(buffer, &end);
+                if (end != buffer.size()) {
+                    std::stringstream message;
+                    message << "Failed to parse integer '" << buffer << "'";
+                    THROW_SYSTEM_ERROR(message.str());
+                }
+                return Token::Integer(value);
+            } catch (const std::invalid_argument&) {
+                std::stringstream message;
+                message << "Failed to parse as number: '" << buffer << "'";
+                RaiseAtLocation(message.str());
+            } catch (const std::out_of_range&) {
+                std::stringstream message;
+                message << "Number out of representable range: '" << buffer << "'";
+                RaiseAtLocation(message.str());
+            }
+        } else if (next == '[') {
+            expect_value = true;
+            ConsumeWhitespace(true);
+            return Token::BeginSeq();
+        } else if (next == ']') {
+            // Would typically occur after reading a ',',
+            // But can occur immediately after '['.
+            ConsumeWhitespace(true);
+            return Token::EndSeq();
+        } else if (next == '{') {
+            ConsumeWhitespace(true);
+            return Token::BeginStruct();
+        } else if (next == '"') {
+            std::string buffer;
+            bool escape = false;
+            buffer.reserve(50);
+            while (has_more) {
+                NextChar();
+                if (escape) {
+                    escape = false;
+                    buffer.push_back(next);
+                    continue;
+                } else if (next == '"') {
+                    break;
+                } else if (next == '\\') {
+                    escape = true;
+                    continue;
+                }
+                buffer.push_back(next);
+            }
+            ConsumeWhitespace(true); // eat the closing "
+            return Token::String(std::move(buffer));
+        } else {
+            size_t symbol = ReadSymbol(namespace_id);     
+            ConsumeWhitespace(false);
+            return Token::Enum(namespace_id, symbol);
+        }
+    }
+    if (next == ':') {
+        expect_value = true;
+        ConsumeWhitespace(true);
+        return ReadToken(namespace_id);
+    } else if (next == '}') {
+        ConsumeWhitespace(true);
+        return Token::EndStruct();
+    } else if (next == ',') {
+        expect_value = true;
+        ConsumeWhitespace(true);
+        return ReadToken(namespace_id);
+    } else if (next == ']') {
+        ConsumeWhitespace(true);
+        return Token::EndSeq();
+    } 
+    size_t symbol = ReadSymbol(namespace_id);     
+    ConsumeWhitespace(false);
+    return Token::Key(namespace_id, symbol);
+
+}
 
 }  // abbey

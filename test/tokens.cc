@@ -6,6 +6,7 @@
 
 #include "test.h"
 #include "abbey\tokens.h"
+#include "abbey\error.h"
 
 namespace {
 
@@ -13,7 +14,8 @@ using abbey::Token;
 using abbey::TokenType;
 using abbey::SymbolMap;
 using abbey::TextTokenWriter;
-
+using abbey::TextTokenReader;
+using abbey::SystemError;
 
 struct SymbolHolder {
     SymbolMap symbol_map;
@@ -66,7 +68,6 @@ int RunTokensTextWriter(const SymbolHolder &symbols, int argc, const char *argv[
     
     writer.Write(Token::BeginSeq());
     writer.Write(Token::Integer(100));
-    writer.Write(Token::SepSeq());
     writer.Write(Token::Integer(200));
     writer.Write(Token::EndSeq());
 
@@ -102,7 +103,6 @@ int RunTokensEmptyCollection(const SymbolHolder &symbols, int argc, const char *
     writer.Write(Token::BeginSeq());
     writer.Write(Token::BeginSeq());
     writer.Write(Token::EndSeq());
-    writer.Write(Token::SepSeq());
     writer.Write(Token::BeginSeq());
     writer.Write(Token::EndSeq());
     writer.Write(Token::EndSeq());
@@ -117,6 +117,277 @@ int RunTokensEmptyCollection(const SymbolHolder &symbols, int argc, const char *
     return 0;
 }
 
+int RunTokensBadStruct(const SymbolHolder &symbols, int argc, const char *argv[]) {
+    BEGIN_TEST("bad_struct");
+
+    try {
+        std::stringstream buf;
+        TextTokenWriter writer(symbols.symbol_map, buf);
+        writer.Write(Token::Key(symbols.inner_ns, symbols.collection));
+        
+        writer.Write(Token::BeginSeq());
+        writer.Write(Token::EndStruct());
+    } catch (const SystemError&){
+        return 0;
+    }
+
+    std::cout << "Expected exception, none thrown.\n";
+    return 1;
+}
+
+int RunTokensBadSeq(const SymbolHolder &symbols, int argc, const char *argv[]) {
+    BEGIN_TEST("bad_seq");
+
+    try {
+        std::stringstream buf;
+        TextTokenWriter writer(symbols.symbol_map, buf);
+        writer.Write(Token::Key(symbols.inner_ns, symbols.collection));
+        
+        writer.Write(Token::BeginStruct());
+        writer.Write(Token::EndSeq());
+    } catch (const SystemError&){
+        return 0;
+    }
+
+    std::cout << "Expected exception, none thrown.\n";
+    return 1;
+}
+
+int RunTokensRead(const SymbolHolder &symbols, int argc, const char *argv[]) {
+    BEGIN_TEST("read");
+
+    const char* const input = R"(name:"he said, \"Hello World!\""
+count:2
+inner:{
+  experimental:yes
+  collection:[
+    100,
+    200
+  ]
+  real1: 0.00
+  real2: 7.8965e-9
+})";
+    std::istringstream in(input);
+    TextTokenReader reader(symbols.symbol_map, in);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(symbols.outer_ns, {symbols.name, symbols.count, symbols.inner}).GetKey(), symbols.name);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextToken(symbols.outer_ns, TokenType::STRING).ConsumeString(), "he said, \"Hello World!\"");
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(symbols.outer_ns, {symbols.name, symbols.count, symbols.inner}).GetKey(), symbols.count);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextToken(symbols.outer_ns, TokenType::INTEGER).GetInteger(), 2);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(symbols.outer_ns, {symbols.name, symbols.count, symbols.inner}).GetKey(), symbols.inner);
+    EXPECT(reader.HasMore(), true);
+    reader.NextToken(symbols.inner_ns, TokenType::BEGIN_STRUCT);
+
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(
+        symbols.inner_ns, 
+        {symbols.experimental, symbols.collection, symbols.real1, symbols.real2}, 
+        TokenType::END_STRUCT).GetKey(), symbols.experimental);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextEnum(
+        symbols.inner_ns, 
+        {symbols.yes, symbols.no}, 
+        TokenType::END_STRUCT).GetEnum(), symbols.yes);
+
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(
+        symbols.inner_ns, 
+        {symbols.experimental, symbols.collection, symbols.real1, symbols.real2}, 
+        TokenType::END_STRUCT).GetKey(), symbols.collection);
+    EXPECT(reader.HasMore(), true);
+    reader.NextToken(symbols.inner_ns, TokenType::BEGIN_SEQ);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextToken(symbols.inner_ns, TokenType::INTEGER, TokenType::END_SEQ).GetInteger(), 100);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextToken(symbols.inner_ns, TokenType::INTEGER, TokenType::END_SEQ).GetInteger(), 200);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextToken(symbols.inner_ns, TokenType::INTEGER, TokenType::END_SEQ).type, TokenType::END_SEQ);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(
+        symbols.inner_ns, 
+        {symbols.experimental, symbols.collection, symbols.real1, symbols.real2}, 
+        TokenType::END_STRUCT).GetKey(), symbols.real1);
+    EXPECT(reader.HasMore(), true);
+    EXPECT_WITHIN(reader.NextToken(symbols.inner_ns, TokenType::REAL).GetReal(), 0.0, 0.01);
+    
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(
+        symbols.inner_ns, 
+        {symbols.experimental, symbols.collection, symbols.real1, symbols.real2}, 
+        TokenType::END_STRUCT).GetKey(), symbols.real2);
+    EXPECT_WITHIN(reader.NextToken(symbols.inner_ns, TokenType::REAL).GetReal(), 7.8965e-9, 0.01);
+    
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(
+        symbols.inner_ns, 
+        {symbols.experimental, symbols.collection, symbols.real1, symbols.real2}, 
+        TokenType::END_STRUCT).type, TokenType::END_STRUCT);
+    EXPECT(reader.HasMore(), false);
+    return 0;
+}
+
+int RunTokensReadString(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("read_string");
+
+    const char* const input = R"(name: [
+        "he said, \"Hello World!\"",
+        "\"I would love for
+this to go on
+forever\""])";
+    std::istringstream in(input);
+    TextTokenReader reader(symbols.symbol_map, in);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(symbols.outer_ns, {symbols.name, symbols.count, symbols.inner}).GetKey(), symbols.name);
+    EXPECT(reader.HasMore(), true);
+    reader.NextToken(symbols.inner_ns, TokenType::BEGIN_SEQ);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextToken(symbols.inner_ns, TokenType::STRING, TokenType::END_SEQ).ConsumeString(), "he said, \"Hello World!\"");
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextToken(symbols.inner_ns, TokenType::STRING, TokenType::END_SEQ).ConsumeString(),
+        "\"I would love for\nthis to go on\nforever\"");
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextToken(symbols.inner_ns, TokenType::STRING, TokenType::END_SEQ).type, TokenType::END_SEQ);
+    
+    EXPECT(reader.HasMore(), false);
+    return 0;
+}
+
+int RunTokensReadEmpty(const SymbolHolder &symbols, int argc, const char *argv[]) {
+    BEGIN_TEST("read_empty");
+
+    const char* const input = R"(name:{} inner:[])";
+    std::istringstream in(input);
+    TextTokenReader reader(symbols.symbol_map, in);
+
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(symbols.outer_ns, {symbols.name, symbols.count, symbols.inner}).GetKey(), symbols.name);
+    EXPECT(reader.HasMore(), true);
+    reader.NextToken(symbols.inner_ns, TokenType::BEGIN_STRUCT);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextToken(symbols.outer_ns, TokenType::STRING, TokenType::END_STRUCT).type, TokenType::END_STRUCT);
+    
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(symbols.outer_ns, {symbols.name, symbols.count, symbols.inner}).GetKey(), symbols.inner);
+    EXPECT(reader.HasMore(), true);
+    reader.NextToken(symbols.inner_ns, TokenType::BEGIN_SEQ);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextToken(symbols.outer_ns, TokenType::STRING, TokenType::END_SEQ).type, TokenType::END_SEQ);
+
+    EXPECT(reader.HasMore(), false);
+    return 0;
+}
+
+int RunTokensReadMissingSymbol(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("read_missing_symbol");
+    bool caught_exception = false;
+
+    {
+         const char* const input = R"(experimental:true)";
+        std::istringstream in(input);
+        TextTokenReader reader(symbols.symbol_map, in);
+
+        EXPECT(reader.HasMore(), true);
+        try {
+            reader.NextKey(symbols.inner_ns, {symbols.real2, symbols.real1});
+        } catch (const SystemError&) {
+            caught_exception = true;
+        }
+    }
+
+    EXPECT(caught_exception, true);
+    caught_exception = false;
+
+     {
+        const char* const input = R"(experimental:yes)";
+        std::istringstream in(input);
+        TextTokenReader reader(symbols.symbol_map, in);
+
+        EXPECT(reader.HasMore(), true);
+        EXPECT(reader.NextKey(symbols.inner_ns, {symbols.real2, symbols.real1, symbols.experimental}).GetKey(), symbols.experimental);
+
+        EXPECT(reader.HasMore(), true);
+        try {
+            reader.NextEnum(symbols.inner_ns, {symbols.yes, symbols.no});
+        } catch (const SystemError&) {
+            caught_exception = true;
+        }
+     }
+
+    EXPECT(caught_exception, true);
+    return 0;
+}
+
+int RunTokensReadDouble(const SymbolHolder &symbols, int argc, const char *argv[]) {
+    BEGIN_TEST("read_double");
+
+    const char* const input = R"(count: 3 inner:56.78.9)";
+    std::istringstream in(input);
+    TextTokenReader reader(symbols.symbol_map, in);
+
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(symbols.outer_ns, {symbols.count}).GetKey(), symbols.count);
+    EXPECT(reader.HasMore(), true);
+    EXPECT_WITHIN(reader.NextToken(symbols.inner_ns, TokenType::REAL).GetReal(), 3.0, 0.01);
+    EXPECT(reader.HasMore(), true);
+    EXPECT(reader.NextKey(symbols.outer_ns, {symbols.inner}).GetKey(), symbols.inner);
+    EXPECT(reader.HasMore(), true);
+
+    try {
+        reader.NextToken(symbols.inner_ns, TokenType::REAL).GetReal();
+    } catch (const SystemError& e) {
+        // Expected outcome.
+        std::cerr << MakeDebugable(e) << "\n";
+        return 0;
+    }
+
+    EXPECT(std::string("Fail on invalid double"), "succeeded");
+    return 1;
+}
+
+int RunTokensReadWrongType(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("read_wrong_type");
+    bool caught_exception = false;
+
+    {
+        const char* const input = R"(experimental::yes)";
+        std::istringstream in(input);
+        TextTokenReader reader(symbols.symbol_map, in);
+
+        EXPECT(reader.HasMore(), true);
+        EXPECT(reader.NextKey(symbols.inner_ns, {symbols.experimental}).type, TokenType::KEY);
+        EXPECT(reader.HasMore(), true);
+        try {
+            reader.NextEnum(symbols.inner_ns, {symbols.yes});
+        } catch (const SystemError& e) {
+            std::cerr << MakeDebugable(e) << "\n";
+            caught_exception = true;
+        }
+    }
+
+    EXPECT(caught_exception, true);
+    caught_exception = false;
+
+     {
+        const char* const input = R"({)";
+        std::istringstream in(input);
+        TextTokenReader reader(symbols.symbol_map, in);
+
+        EXPECT(reader.HasMore(), true);
+        try {
+            reader.NextKey(symbols.inner_ns, {symbols.experimental}, TokenType::BEGIN_STRUCT);
+        } catch (const SystemError& e) {
+            std::cerr << MakeDebugable(e) << "\n";
+            caught_exception = true;
+        }
+     }
+
+    EXPECT(caught_exception, true);
+    return 0;
+}
 
 } // namespace
 
@@ -125,10 +396,27 @@ int RunTokensTests(int argc, const char *argv[]) {
 
     int result = 0;
 
-    SymbolHolder symbols;
-    symbols.PrepareSymbols();
-    result = RunTokensTextWriter(symbols, argc, argv) == 0 ? result : 1;
-    result = RunTokensEmptyCollection(symbols, argc, argv) == 0 ? result : 1;
+    try {
+        SymbolHolder symbols;
+        symbols.PrepareSymbols();
+
+        // text writer
+        result = RunTokensTextWriter(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensEmptyCollection(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensBadStruct(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensBadSeq(symbols, argc, argv) == 0 ? result : 1;
+        
+        // text reader
+        result = RunTokensRead(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensReadString(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensReadEmpty(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensReadMissingSymbol(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensReadDouble(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensReadWrongType(symbols, argc, argv) == 0 ? result : 1;
+    } catch(const SystemError& e) {
+        std::cerr << MakeDebugable(e) << "\n";
+        return 1;
+    }
 
     return result;
 }
