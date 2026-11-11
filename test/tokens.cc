@@ -16,6 +16,8 @@ using abbey::SymbolMap;
 using abbey::TextTokenWriter;
 using abbey::TextTokenReader;
 using abbey::SystemError;
+using abbey::ByteTokenWriter;
+using abbey::ByteTokenReader;
 
 struct SymbolHolder {
     SymbolMap symbol_map;
@@ -389,6 +391,222 @@ int RunTokensReadWrongType(const SymbolHolder &symbols, int argc, const char *ar
     return 0;
 }
 
+int RunTokensBinaryTinyInt(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("binary_tiny_int");
+    std::stringstream buffer;
+    ByteTokenWriter out(buffer);
+
+    out.Write(Token::Key(symbols.outer_ns, symbols.count));
+    out.Write(Token::Integer(2));
+
+    out.Complete();
+    buffer.seekg(0);
+    ByteTokenReader in(symbols.symbol_map, buffer);
+
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.outer_ns, {symbols.count}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.outer_ns, TokenType::INTEGER).GetInteger(), 2);
+    EXPECT(in.HasMore(), false);
+    return 0;
+}
+
+int RunTokensBinaryShortInt(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("binary_short_int");
+
+    std::stringstream buffer;
+    ByteTokenWriter out(buffer);
+
+    out.Write(Token::Key(symbols.outer_ns, symbols.count));
+    out.Write(Token::Integer(-2));
+
+    out.Complete();
+    buffer.seekg(0);
+    ByteTokenReader in(symbols.symbol_map, buffer);
+
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.outer_ns, {symbols.count}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.outer_ns, TokenType::INTEGER).GetInteger(), -2);
+    EXPECT(in.HasMore(), false);
+
+    return 0;
+}
+
+int RunTokensBinaryLongInt(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("binary_long_int");
+    std::stringstream buffer;
+    ByteTokenWriter out(buffer);
+
+    out.Write(Token::Key(symbols.outer_ns, symbols.count));
+    out.Write(Token::Integer(0x8FFF)); // overflows 16 bits, but not 32.
+
+    out.Complete();
+    EXPECT(buffer.str().size() > 5, true);
+    buffer.seekg(0);
+    ByteTokenReader in(symbols.symbol_map, buffer);
+
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.outer_ns, {symbols.count}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.outer_ns, TokenType::INTEGER).GetInteger(), 0x8fff);
+    EXPECT(in.HasMore(), false);
+    return 0;
+}
+
+int RunTokensBinaryDouble(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("binary_double");
+    std::stringstream buffer;
+    ByteTokenWriter out(buffer);
+
+    out.Write(Token::Key(symbols.inner_ns, symbols.real1));
+    out.Write(Token::Real(0.012));
+    out.Write(Token::Key(symbols.inner_ns, symbols.real2));
+    out.Write(Token::Real(-1.012e-12));
+
+    out.Complete();
+    buffer.seekg(0);
+    ByteTokenReader in(symbols.symbol_map, buffer);
+
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.inner_ns, {symbols.real1}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT_WITHIN(in.NextToken(symbols.inner_ns, TokenType::REAL).GetReal(), 0.012, 0.001);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.inner_ns, {symbols.real2}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT_WITHIN(in.NextToken(symbols.inner_ns, TokenType::REAL).GetReal(), -1.012e-12, 0.001);
+    EXPECT(in.HasMore(), false);
+    return 0;
+}
+
+int RunTokensBinaryString(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("binary_string");
+    std::stringstream buffer;
+    ByteTokenWriter out(buffer);
+
+    out.Write(Token::Key(symbols.outer_ns, symbols.name));
+    out.Write(Token::String("\"Hello \\World!\"")); // overflows 16 bits, but not 32.
+
+    out.Complete();
+    buffer.seekg(0);
+    ByteTokenReader in(symbols.symbol_map, buffer);
+
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.outer_ns, {symbols.name}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.outer_ns, TokenType::STRING).ConsumeString(), "\"Hello \\World!\"");
+    EXPECT(in.HasMore(), false);
+    return 0;
+}
+
+int RunTokensBinaryEnum(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("binary_enum");
+    std::stringstream buffer;
+    ByteTokenWriter out(buffer);
+
+    out.Write(Token::Key(symbols.inner_ns, symbols.experimental));
+    out.Write(Token::Enum(symbols.inner_ns, symbols.no));
+
+    out.Complete();
+    buffer.seekg(0);
+    ByteTokenReader in(symbols.symbol_map, buffer);
+
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.inner_ns, {symbols.experimental}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextEnum(symbols.inner_ns, {symbols.no}).type, TokenType::ENUM);
+    EXPECT(in.HasMore(), false);
+    return 0;
+}
+
+int RunTokensBinarySequence(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("binary_sequence");
+    std::stringstream buffer;
+    ByteTokenWriter out(buffer);
+
+    out.Write(Token::Key(symbols.inner_ns, symbols.collection));
+    out.Write(Token::BeginSeqWithSize(2));
+    out.Write(Token::String("first"));
+    out.Write(Token::String("second"));
+    out.Write(Token::EndSeq());
+
+    out.Complete();
+    buffer.seekg(0);
+    ByteTokenReader in(symbols.symbol_map, buffer);
+
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.inner_ns, {symbols.collection}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.inner_ns, TokenType::BEGIN_SEQ).GetCount().value(), 2);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.inner_ns, TokenType::STRING).ConsumeString(), "first");
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.inner_ns, TokenType::STRING).ConsumeString(), "second");
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.inner_ns, TokenType::END_SEQ).type, TokenType::END_SEQ);
+    EXPECT(in.HasMore(), false);
+    return 0;
+}
+
+int RunTokensBinarySequenceNoSize(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("binary_sequence_no_size");
+    std::stringstream buffer;
+    ByteTokenWriter out(buffer);
+
+    out.Write(Token::Key(symbols.inner_ns, symbols.collection));
+    out.Write(Token::BeginSeq());
+    out.Write(Token::String("first"));
+    out.Write(Token::String("second"));
+    out.Write(Token::EndSeq());
+
+    out.Complete();
+    buffer.seekg(0);
+    ByteTokenReader in(symbols.symbol_map, buffer);
+
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.inner_ns, {symbols.collection}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.inner_ns, TokenType::BEGIN_SEQ).GetCount().has_value(), false);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.inner_ns, TokenType::STRING).ConsumeString(), "first");
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.inner_ns, TokenType::STRING).ConsumeString(), "second");
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.inner_ns, TokenType::END_SEQ).type, TokenType::END_SEQ);
+    EXPECT(in.HasMore(), false);
+    return 0;
+}
+
+int RunTokensBinaryStruct(const SymbolHolder &symbols, int argc, const char *argv[]) { 
+    BEGIN_TEST("binary_struct");
+    std::stringstream buffer;
+    ByteTokenWriter out(buffer);
+
+    out.Write(Token::Key(symbols.outer_ns, symbols.inner));
+    out.Write(Token::BeginStruct());
+    out.Write(Token::Key(symbols.inner_ns, symbols.experimental));
+    out.Write(Token::Enum(symbols.inner_ns, symbols.yes));
+    out.Write(Token::EndStruct());
+
+    out.Complete();
+    buffer.seekg(0);
+    ByteTokenReader in(symbols.symbol_map, buffer);
+
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.outer_ns, {symbols.inner}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.outer_ns, TokenType::BEGIN_STRUCT).type, TokenType::BEGIN_STRUCT);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextKey(symbols.inner_ns, {symbols.experimental}).type, TokenType::KEY);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextEnum(symbols.inner_ns, {symbols.yes}).type, TokenType::ENUM);
+    EXPECT(in.HasMore(), true);
+    EXPECT(in.NextToken(symbols.outer_ns, TokenType::END_STRUCT).type, TokenType::END_STRUCT);
+    EXPECT(in.HasMore(), false);
+    return 0;
+}
+
 } // namespace
 
 int RunTokensTests(int argc, const char *argv[]) {
@@ -413,6 +631,18 @@ int RunTokensTests(int argc, const char *argv[]) {
         result = RunTokensReadMissingSymbol(symbols, argc, argv) == 0 ? result : 1;
         result = RunTokensReadDouble(symbols, argc, argv) == 0 ? result : 1;
         result = RunTokensReadWrongType(symbols, argc, argv) == 0 ? result : 1;
+
+        // binary representation
+        result = RunTokensBinaryTinyInt(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensBinaryShortInt(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensBinaryLongInt(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensBinaryDouble(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensBinaryString(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensBinaryEnum(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensBinarySequence(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensBinarySequenceNoSize(symbols, argc, argv) == 0 ? result : 1;
+        result = RunTokensBinaryStruct(symbols, argc, argv) == 0 ? result : 1;
+
     } catch(const SystemError& e) {
         std::cerr << MakeDebugable(e) << "\n";
         return 1;

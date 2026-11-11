@@ -109,6 +109,9 @@ public:
 
     size_t IdForString(std::string_view symbol) const;
     std::string_view StringForId(size_t id) const;
+    bool HasSymbol(size_t id) const {
+        return id < id_to_str.size();
+    }
 };
 
 class SymbolMap {
@@ -127,18 +130,21 @@ public:
     std::string_view StringForId(size_t namespace_id, size_t id) const {
         return GetNamespace(namespace_id).StringForId(id);
     }
+    bool HasSymbol(size_t namespace_id, size_t id) const {
+        return GetNamespace(namespace_id).HasSymbol(id);
+    }
 };
 
 class Token_Debugable : public Debugable {
 private:
     const Token& token;
-    const SymbolMap& token_map;
+    const SymbolMap& symbol_map;
 public:
-    Token_Debugable(const SymbolMap& token_map, const Token& token) : token_map(token_map), token(token) {}
+    Token_Debugable(const SymbolMap& symbol_map, const Token& token) : symbol_map(symbol_map), token(token) {}
 
     std::ostream& Debug(std::string_view, std::string_view, std::ostream& out) const override;
 };
-inline Token_Debugable MakeDebugable(const SymbolMap& token_map, const Token& token) { return Token_Debugable(token_map, token); }
+inline Token_Debugable MakeDebugable(const SymbolMap& symbol_map, const Token& token) { return Token_Debugable(symbol_map, token); }
 
 class TokenReader {
 protected:    
@@ -149,11 +155,18 @@ public:
     virtual ~TokenReader() = default;
 
     virtual bool HasMore() = 0;
+
+    // accept only a token of type 'a'
     Token NextToken(size_t namespace_id, TokenType a);
+    // accept only a token of type 'a' or 'b'
     Token NextToken(size_t namespace_id, TokenType a, TokenType b);
+    // accept only a key with symbol id in 'valid_key_ids'
     Token NextKey(size_t namespace_id, const std::vector<size_t>& valid_key_ids);
+    // accept only a key with symbol id in 'valid_key_ids' or a token of type 'b'
     Token NextKey(size_t namespace_id, const std::vector<size_t>& valid_key_ids, TokenType b);
+    // accept only an enum with symbol id in 'valid_enum_ids'
     Token NextEnum(size_t namespace_id, const std::vector<size_t>& valid_enum_ids);
+    // accept only an enum with symbol id in 'valid_enum_ids' or a token of type 'b'
     Token NextEnum(size_t namespace_id, const std::vector<size_t>& valid_enum_ids, TokenType b);
 };
 
@@ -206,10 +219,9 @@ public:
 
 class ByteTokenWriter : public TokenWriter {
 private:
-    const SymbolMap& tokens;
     std::ostream& out;
 public:
-    ByteTokenWriter(const SymbolMap& tokens, std::ostream& out);
+    ByteTokenWriter(std::ostream& out);
 
     void Complete() override;
     void Write(const Token& token) override;
@@ -217,17 +229,27 @@ public:
 
 class ByteTokenReader : public TokenReader {
 private:
-    const SymbolMap& tokens;
+    const SymbolMap& symbols;
     std::istream& in;
-    size_t offset;
+    size_t offset = 0;
+    std::vector<TokenType> scope;
+    uint8_t next_byte = 0;
+    bool has_more = true;
+    bool expect_key = true;
 
     void RaiseUnexpectedSymbol(size_t namespace_id, const std::vector<size_t>& expected_symbols, size_t actual_symbol) override;
     void RaiseAtLocation(std::string_view message) override;
+    bool InSeq();
+    uint8_t GetByte();
+    long ReadInteger(uint8_t control);
+    double ReadReal();
+    std::string ReadString(size_t count);
+
     Token ReadToken(size_t namespace_id) override;
 public:
-    ByteTokenReader(const SymbolMap& tokens, std::istream& in);
+    ByteTokenReader(const SymbolMap& symbols, std::istream& in);
     
-    bool HasMore() override;
+    bool HasMore() override { return has_more; }
 };
 
 } // namespace

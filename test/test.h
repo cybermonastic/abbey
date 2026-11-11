@@ -27,7 +27,7 @@
         auto a = actual; \
         auto b = expected; \
         auto e = error; \
-        if (a > (1.0 + e) * b || a < (1.0 - e) * b) { \
+        if (a > 0 && (a > (1.0 + e) * b || a < (1.0 - e) * b) || a < 0 && (a < (1.0 + e) * b || a > (1.0 - e) * b)) { \
             std::cerr << EXPECT_PREFACE(__FILE__, __LINE__) << "FAILURE: (" << a << ") != (" << b << "+/-" << (100 * e) << "%" << ")\n"; \
             return 1; \
         } \
