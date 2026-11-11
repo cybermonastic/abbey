@@ -513,39 +513,33 @@ namespace {
 constexpr uint8_t BEGIN_PREFIX = 0x00; 
 // context determines if seq, struct
 constexpr uint8_t END_PREFIX = 0xE0; 
-// 0xC0
 // rest of the byte is the integer value.
-constexpr uint8_t TINY_INTEGER_PREFIX = 0xA0;
+constexpr uint8_t TINY_INTEGER_PREFIX = 0xC0;
 // rest of the byte is the symbol value.
-constexpr uint8_t TINY_SYMBOL_PREFIX = 0x80;
+constexpr uint8_t TINY_SYMBOL_PREFIX = 0xA0;
 // next two bytes are the integer value.
-constexpr uint8_t SMALL_PREFIX = 0x60;
+constexpr uint8_t SMALL_PREFIX = 0x80;
 // next four bytes hold an integer, or next eight bytes hold a double.
-constexpr uint8_t FULL_PREFIX = 0x40;
+constexpr uint8_t FULL_PREFIX = 0x60;
+// 0x40
 // 0x20
 
-// 0x01
-constexpr uint8_t SEQ_SUFFIX = 0x02;
-constexpr uint8_t STRUCT_SUFFIX = 0x03;
-constexpr uint8_t SYMBOL_SUFFIX = 0x04;
-constexpr uint8_t INTEGER_SUFFIX = 0x05;
-constexpr uint8_t REAL_SUFFIX = 0x06;
+constexpr uint8_t SEQ_SUFFIX = 0x01;
+constexpr uint8_t STRUCT_SUFFIX = 0x02;
+constexpr uint8_t SYMBOL_SUFFIX = 0x03;
+constexpr uint8_t INTEGER_SUFFIX = 0x04;
+constexpr uint8_t REAL_SUFFIX = 0x05;
+constexpr uint8_t STRING_SUFFIX = 0x06;
 // 0x07
-// 0x08
-constexpr uint8_t STRING_SUFFIX_WITH_SIZE = 0x09;
-constexpr uint8_t SEQ_SUFFIX_WITH_SIZE = 0x0A;
+constexpr uint8_t WITH_SIZE = 0x08;
+constexpr uint8_t STRING_SUFFIX_WITH_SIZE = STRING_SUFFIX | WITH_SIZE;
+constexpr uint8_t SEQ_SUFFIX_WITH_SIZE = SEQ_SUFFIX | WITH_SIZE;
 
 uint8_t GetPrefix(uint8_t byte) { return 0xE0 & byte; }
 uint8_t GetSuffix(uint8_t byte) { return 0x1F & byte; }
 
 TokenType GetTokenType(uint8_t byte, bool expect_key) {
     uint8_t suffix = GetSuffix(byte);
-    if (suffix == STRING_SUFFIX_WITH_SIZE) {
-        return TokenType::STRING;
-    }
-    if (suffix == REAL_SUFFIX) {
-        return TokenType::REAL;
-    }
     uint8_t prefix = GetPrefix(byte);
     if (prefix == TINY_INTEGER_PREFIX) {
         return TokenType::INTEGER;
@@ -567,6 +561,12 @@ TokenType GetTokenType(uint8_t byte, bool expect_key) {
             return TokenType::END_SEQ;
         }
     }
+    if (suffix == STRING_SUFFIX_WITH_SIZE) {
+        return TokenType::STRING;
+    }
+    if (suffix == REAL_SUFFIX) {
+        return TokenType::REAL;
+    }
     if (suffix == SEQ_SUFFIX_WITH_SIZE) {
         return TokenType::BEGIN_SEQ;
     }
@@ -582,7 +582,7 @@ TokenType GetTokenType(uint8_t byte, bool expect_key) {
 }
 
 bool HasSize(uint8_t byte) {  
-    return (GetSuffix(byte) & 0x08) > 0;
+    return (GetSuffix(byte) & WITH_SIZE) > 0;
 }
 
 void WriteInteger(TokenType type, long value, std::ostream& out) {
@@ -704,6 +704,7 @@ uint8_t ByteTokenReader::GetByte() {
     // read one byte in advance, to find out if we've reached end of stream.
     next_byte = static_cast<uint8_t>(in.get());
     has_more = in.good();
+    std::cerr << std::hex << static_cast<int>(byte) << "\n";
     return byte;
 }
 
